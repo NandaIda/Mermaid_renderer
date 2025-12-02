@@ -62,10 +62,12 @@ function App() {
   ])
   const [activeTabId, setActiveTabId] = useLocalStorage('mermaid-active-tab', 1)
   const [theme, setTheme] = useLocalStorage('mermaid-theme', 'default')
+  const [zoom, setZoom] = useState(1)
   const [nextId, setNextId] = useState(2)
 
   const mermaidRef = useRef(null)
   const textareaRef = useRef(null)
+  const previewContentRef = useRef(null)
 
   const activeTab = tabs.find(tab => tab.id === activeTabId) || tabs[0]
   const history = useHistory(activeTab?.code || defaultDiagram)
@@ -82,6 +84,28 @@ function App() {
     setTabs(tabs.map(tab =>
       tab.id === activeTabId ? { ...tab, code } : tab
     ))
+  }
+
+  // Zoom controls
+  const handleZoomIn = () => {
+    setZoom(prevZoom => Math.min(prevZoom + 0.1, 5))
+  }
+
+  const handleZoomOut = () => {
+    setZoom(prevZoom => Math.max(prevZoom - 0.1, 0.3))
+  }
+
+  const handleRecenter = () => {
+    if (previewContentRef.current) {
+      const element = previewContentRef.current
+      element.scrollLeft = (element.scrollWidth - element.clientWidth) / 2
+      element.scrollTop = (element.scrollHeight - element.clientHeight) / 2
+    }
+  }
+
+  const handleZoomReset = () => {
+    setZoom(1)
+    setTimeout(handleRecenter, 50) // Small delay to allow zoom to apply first
   }
 
   const handleCodeChange = (e) => {
@@ -446,6 +470,15 @@ function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         exportSVG()
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault()
+        handleZoomIn()
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) {
+        e.preventDefault()
+        handleZoomOut()
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault()
+        handleZoomReset()
       }
     }
 
@@ -457,9 +490,12 @@ function App() {
     <div className={`app theme-${theme}`}>
       <header className="header">
         <div className="header-content">
-          <div>
-            <h1>Mermaid Diagram Renderer</h1>
-            <p>Create and visualize diagrams with Mermaid syntax</p>
+          <div className="header-title">
+            <img src="/trident.svg" alt="Trident Logo" className="header-logo" />
+            <div>
+              <h1>Mermaid Diagram Renderer</h1>
+              <p>Create and visualize diagrams with Mermaid syntax</p>
+            </div>
           </div>
           <div className="header-controls">
             <select
@@ -469,8 +505,6 @@ function App() {
             >
               <option value="default">Light Theme</option>
               <option value="dark">Dark Theme</option>
-              <option value="forest">Forest Theme</option>
-              <option value="neutral">Neutral Theme</option>
             </select>
           </div>
         </div>
@@ -567,9 +601,49 @@ function App() {
         </div>
 
         <div className="preview-panel">
-          <h2>Preview</h2>
-          <div className="preview-content">
-            <MermaidRenderer ref={mermaidRef} chart={activeTab?.code || ''} theme={theme} />
+          <div className="preview-header">
+            <h2>Preview</h2>
+            <div className="zoom-controls">
+              <button
+                onClick={handleZoomOut}
+                className="zoom-btn"
+                title="Zoom Out (Ctrl+-)"
+              >
+                −
+              </button>
+              <span className="zoom-level">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={handleZoomIn}
+                className="zoom-btn"
+                title="Zoom In (Ctrl++)"
+              >
+                +
+              </button>
+              <button
+                onClick={handleZoomReset}
+                className="zoom-btn reset-btn"
+                title="Reset Zoom (Ctrl+0)"
+              >
+                Reset
+              </button>
+              <button
+                onClick={handleRecenter}
+                className="zoom-btn recenter-btn"
+                title="Recenter View"
+              >
+                ⊙
+              </button>
+            </div>
+          </div>
+          <div ref={previewContentRef} className="preview-content">
+            <div className="preview-zoom-container">
+              <div
+                className="preview-zoom-wrapper"
+                style={{ transform: `scale(${zoom})` }}
+              >
+                <MermaidRenderer ref={mermaidRef} chart={activeTab?.code || ''} theme={theme} />
+              </div>
+            </div>
           </div>
         </div>
       </div>
