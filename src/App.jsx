@@ -237,20 +237,15 @@ function App() {
     svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
     svgClone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
 
-    // CRITICAL: Remove marker-specific CSS rules from style tags
-    // These CSS rules can override explicit SVG attributes in Inkscape
+    // Remove marker-specific CSS rules that can override explicit SVG attributes in Inkscape
     const styleTags = svgClone.querySelectorAll('style')
     styleTags.forEach(styleTag => {
       let css = styleTag.textContent || ''
 
-      // Remove CSS rules that affect markers and arrows
-      // These conflict with our explicit SVG attributes in Inkscape
+      // Remove CSS rules for markers and arrowheads
       css = css.replace(/[^}]*\.marker[^{]*\{[^}]*\}/gi, '')
-      css = css.replace(/[^}]*#marker[^{]*\{[^}]*\}/gi, '')
       css = css.replace(/[^}]*\.arrowhead[^{]*\{[^}]*\}/gi, '')
       css = css.replace(/[^}]*\.arrowMarker[^{]*\{[^}]*\}/gi, '')
-      css = css.replace(/[^}]*\[marker-end\][^{]*\{[^}]*\}/gi, '')
-      css = css.replace(/[^}]*\[marker-start\][^{]*\{[^}]*\}/gi, '')
 
       styleTag.textContent = css
     })
@@ -312,20 +307,11 @@ function App() {
 
       // Apply computed styles from original element if no explicit attribute
       const styles = elementStyles.get(index)
-      if (styles) {
-        if (!el.hasAttribute('fill') && styles.fill && styles.fill !== 'none' && styles.fill !== 'rgba(0, 0, 0, 0)') {
-          el.setAttribute('fill', rgbToHex(styles.fill))
-        }
-        if (!el.hasAttribute('stroke') && styles.stroke && styles.stroke !== 'none' && styles.stroke !== 'rgba(0, 0, 0, 0)') {
-          el.setAttribute('stroke', rgbToHex(styles.stroke))
-        }
+      if (styles && !el.hasAttribute('fill') && styles.fill && styles.fill !== 'none' && styles.fill !== 'rgba(0, 0, 0, 0)') {
+        el.setAttribute('fill', rgbToHex(styles.fill))
       }
-
-      // For edge paths, ensure stroke-width is explicitly set (was in CSS, now classes are removed)
-      if (isEdgePath && !el.hasAttribute('stroke-width')) {
-        const computed = window.getComputedStyle(originalElements[index])
-        const strokeWidth = computed.strokeWidth || '2px'
-        el.setAttribute('stroke-width', strokeWidth)
+      if (styles && !el.hasAttribute('stroke') && styles.stroke && styles.stroke !== 'none' && styles.stroke !== 'rgba(0, 0, 0, 0)') {
+        el.setAttribute('stroke', rgbToHex(styles.stroke))
       }
     })
 
@@ -335,27 +321,14 @@ function App() {
       const markerId = marker.getAttribute('id')
       const color = markerColors.get(markerId) || '#333333'
 
-      // Ensure marker has proper attributes for Inkscape compatibility
-      if (!marker.hasAttribute('orient')) {
-        marker.setAttribute('orient', 'auto')
-      }
-      if (!marker.hasAttribute('markerUnits')) {
-        marker.setAttribute('markerUnits', 'strokeWidth')
-      }
-
       const markerShapes = marker.querySelectorAll('path, polygon, circle, polyline')
       markerShapes.forEach(shape => {
-        // For Inkscape: Keep markers filled (as intended) but with the correct color
-        // Setting fill to the path stroke color ensures consistent rendering
+        // Set fill to the path stroke color for consistent rendering in Inkscape
         shape.setAttribute('fill', color)
-
-        // Remove stroke to prevent double rendering
         shape.setAttribute('stroke', 'none')
 
-        // Completely remove style attribute - let explicit attributes take precedence
+        // Remove style and class attributes to prevent CSS conflicts
         shape.removeAttribute('style')
-
-        // Remove classes that might apply conflicting CSS styling
         shape.removeAttribute('class')
       })
     })
