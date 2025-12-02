@@ -64,6 +64,9 @@ function App() {
   const [theme, setTheme] = useLocalStorage('mermaid-theme', 'default')
   const [zoom, setZoom] = useState(1)
   const [nextId, setNextId] = useState(2)
+  const [showPngDialog, setShowPngDialog] = useState(false)
+  const [pngSize, setPngSize] = useState({ width: 1920, height: 1080 })
+  const [aspectRatio, setAspectRatio] = useState(1920 / 1080)
 
   const mermaidRef = useRef(null)
   const textareaRef = useRef(null)
@@ -427,6 +430,32 @@ function App() {
     URL.revokeObjectURL(url)
   }
 
+  const openPngDialog = () => {
+    const svgElement = mermaidRef.current?.getSvgElement()
+    if (!svgElement) return
+
+    // Get current SVG dimensions
+    const bbox = svgElement.getBBox()
+    const width = Math.round(bbox.width * 2)
+    const height = Math.round(bbox.height * 2)
+
+    setPngSize({ width, height })
+    setAspectRatio(width / height)
+    setShowPngDialog(true)
+  }
+
+  const handlePngWidthChange = (newWidth) => {
+    const width = parseInt(newWidth) || 100
+    const height = Math.round(width / aspectRatio)
+    setPngSize({ width, height })
+  }
+
+  const handlePngHeightChange = (newHeight) => {
+    const height = parseInt(newHeight) || 100
+    const width = Math.round(height * aspectRatio)
+    setPngSize({ width, height })
+  }
+
   const exportPNG = () => {
     const svgElement = mermaidRef.current?.getSvgElement()
     if (!svgElement) return
@@ -437,8 +466,8 @@ function App() {
     const img = new Image()
 
     img.onload = () => {
-      canvas.width = img.width * 2
-      canvas.height = img.height * 2
+      canvas.width = pngSize.width
+      canvas.height = pngSize.height
       ctx.fillStyle = 'white'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
@@ -450,6 +479,7 @@ function App() {
         link.download = `${activeTab.name}.png`
         link.click()
         URL.revokeObjectURL(url)
+        setShowPngDialog(false)
       })
     }
 
@@ -457,6 +487,14 @@ function App() {
     const url = URL.createObjectURL(svgBlob)
     img.src = url
   }
+
+  // Auto-recenter when diagram changes or on first load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleRecenter()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [activeTab?.code, activeTabId])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -580,7 +618,7 @@ function App() {
             ⬇ SVG
           </button>
           <button
-            onClick={exportPNG}
+            onClick={openPngDialog}
             className="toolbar-btn export-btn"
           >
             ⬇ PNG
@@ -647,6 +685,48 @@ function App() {
           </div>
         </div>
       </div>
+
+      {showPngDialog && (
+        <div className="dialog-overlay" onClick={() => setShowPngDialog(false)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>Export PNG</h3>
+            <p className="dialog-description">Set the size for your PNG export (aspect ratio locked)</p>
+            <div className="dialog-content">
+              <div className="size-input-group">
+                <label>
+                  Width (px):
+                  <input
+                    type="number"
+                    value={pngSize.width}
+                    onChange={(e) => handlePngWidthChange(e.target.value)}
+                    min="100"
+                    max="10000"
+                  />
+                </label>
+                <label>
+                  Height (px):
+                  <input
+                    type="number"
+                    value={pngSize.height}
+                    onChange={(e) => handlePngHeightChange(e.target.value)}
+                    min="100"
+                    max="10000"
+                  />
+                </label>
+              </div>
+              <p className="size-info">Aspect Ratio: {aspectRatio.toFixed(2)}:1</p>
+            </div>
+            <div className="dialog-actions">
+              <button onClick={() => setShowPngDialog(false)} className="dialog-btn cancel-btn">
+                Cancel
+              </button>
+              <button onClick={exportPNG} className="dialog-btn export-btn">
+                Export PNG
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

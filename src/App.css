@@ -472,6 +472,150 @@ textarea:focus {
   word-wrap: break-word;
 }
 
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.theme-dark .dialog {
+  background: #2d2d2d;
+  color: #e0e0e0;
+}
+
+.dialog h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.5rem;
+  color: #333;
+}
+
+.theme-dark .dialog h3 {
+  color: #e0e0e0;
+}
+
+.dialog-description {
+  color: #666;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.theme-dark .dialog-description {
+  color: #aaa;
+}
+
+.dialog-content {
+  margin-bottom: 1.5rem;
+}
+
+.size-input-group {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.size-input-group label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.theme-dark .size-input-group label {
+  color: #aaa;
+}
+
+.size-input-group input {
+  padding: 0.6rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.theme-dark .size-input-group input {
+  background: #1e1e1e;
+  border-color: #404040;
+  color: #e0e0e0;
+}
+
+.size-input-group input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.size-info {
+  font-size: 0.85rem;
+  color: #666;
+  text-align: center;
+  margin: 0;
+}
+
+.theme-dark .size-info {
+  color: #aaa;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.dialog-btn {
+  padding: 0.6rem 1.5rem;
+  border: 2px solid #ddd;
+  background: white;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.theme-dark .dialog-btn {
+  background: #1e1e1e;
+  border-color: #404040;
+  color: #e0e0e0;
+}
+
+.dialog-btn.cancel-btn:hover {
+  background: #f5f5f5;
+  border-color: #999;
+}
+
+.dialog-btn.export-btn {
+  background: #10b981;
+  color: white;
+  border-color: #10b981;
+}
+
+.dialog-btn.export-btn:hover {
+  background: #059669;
+  border-color: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
 @media (max-width: 968px) {
   .content {
     grid-template-columns: 1fr;
@@ -490,5 +634,10 @@ textarea:focus {
   .toolbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .dialog {
+    min-width: 90%;
+    margin: 1rem;
   }
 }
