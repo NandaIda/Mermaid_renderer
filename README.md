@@ -6,11 +6,14 @@ A modern, interactive web application for creating and visualizing Mermaid diagr
 
 - **Live Preview**: See your diagrams update in real-time as you type
 - **Multiple Workspaces**: Create and manage multiple diagram tabs/workspaces
-- **Export Options**: Export diagrams as PNG or SVG files
+- **Export Options**: Export diagrams as PNG (with custom size) or SVG files
+- **Enhanced Inkscape Compatibility**: SVG exports are optimized for Inkscape with proper arrow rendering, explicit color attributes, and correct stroke/fill properties - providing better compatibility than SVG exports from other Mermaid platforms
 - **Auto-Save**: All diagrams automatically saved to localStorage
+- **Auto-Center**: Diagrams automatically center on load and when switching tabs
 - **Undo/Redo**: Full history support with keyboard shortcuts (Ctrl+Z / Ctrl+Y)
-- **Theme Support**: Choose from 4 different Mermaid themes (Light, Dark, Forest, Neutral)
+- **Theme Support**: Choose from 2 different Mermaid themes (Light, Dark)
 - **Example Templates**: Quick-start with pre-built diagram examples
+- **Zoom Controls**: Zoom in/out, reset, and recenter view with mouse or keyboard
 - **Keyboard Shortcuts**: Efficient workflow with Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+S (export SVG)
 - **Modern UI**: Clean, responsive interface built with React and Vite
 - **Error Handling**: Helpful error messages when diagram syntax is invalid
@@ -57,14 +60,16 @@ npm run preview
 ## Usage
 
 1. **Write Mermaid Code**: Enter your Mermaid diagram syntax in the left editor panel
-2. **View Preview**: The diagram renders automatically in the right preview panel
+2. **View Preview**: The diagram renders automatically in the right preview panel with auto-centering
 3. **Try Examples**: Click on example buttons to load pre-built diagram templates
 4. **Multiple Tabs**: Click the "+" button to create new workspaces for different diagrams
 5. **Rename Tabs**: Click on the tab name to rename your diagrams
-6. **Export**: Click "SVG" or "PNG" buttons to download your diagrams
-7. **Undo/Redo**: Use Ctrl+Z and Ctrl+Y to navigate through your edit history
-8. **Change Theme**: Select different themes from the dropdown in the header
-9. **Auto-Save**: All your work is automatically saved and persists between sessions
+6. **Export SVG**: Click "SVG" button to download your diagram (optimized for Inkscape)
+7. **Export PNG**: Click "PNG" button to open a dialog where you can set custom dimensions with locked aspect ratio
+8. **Zoom Controls**: Use +/- buttons or keyboard shortcuts to zoom, reset view, or recenter the diagram
+9. **Undo/Redo**: Use Ctrl+Z and Ctrl+Y to navigate through your edit history
+10. **Change Theme**: Select different themes from the dropdown in the header
+11. **Auto-Save**: All your work is automatically saved and persists between sessions
 
 ## Supported Diagram Types
 
