@@ -199,6 +199,37 @@ function App() {
       })
     })
 
+    // Extract marker colors from paths in ORIGINAL SVG
+    const markerColors = new Map()
+    const pathsWithMarkers = svgElement.querySelectorAll('[marker-end], [marker-start], [marker-mid]')
+
+    pathsWithMarkers.forEach(path => {
+      const computed = window.getComputedStyle(path)
+      const strokeColor = computed.stroke && computed.stroke !== 'none' ? rgbToHex(computed.stroke) : '#333333'
+
+      // Check all marker types
+      const markerEnd = path.getAttribute('marker-end')
+      const markerStart = path.getAttribute('marker-start')
+      const markerMid = path.getAttribute('marker-mid')
+
+      // Extract marker ID from url(#markerId) format
+      const extractMarkerId = (markerAttr) => {
+        if (!markerAttr) return null
+        const match = markerAttr.match(/url\(#([^)]+)\)/)
+        return match ? match[1] : null
+      }
+
+      const markerIds = [
+        extractMarkerId(markerEnd),
+        extractMarkerId(markerStart),
+        extractMarkerId(markerMid)
+      ].filter(Boolean)
+
+      markerIds.forEach(markerId => {
+        markerColors.set(markerId, strokeColor)
+      })
+    })
+
     // Clone the SVG
     const svgClone = svgElement.cloneNode(true)
 
@@ -206,9 +237,32 @@ function App() {
     svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
     svgClone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
 
+    // CRITICAL: Remove marker-specific CSS rules from style tags
+    // These CSS rules can override explicit SVG attributes in Inkscape
+    const styleTags = svgClone.querySelectorAll('style')
+    styleTags.forEach(styleTag => {
+      let css = styleTag.textContent || ''
+
+      // Remove CSS rules that affect markers and arrows
+      // These conflict with our explicit SVG attributes in Inkscape
+      css = css.replace(/[^}]*\.marker[^{]*\{[^}]*\}/gi, '')
+      css = css.replace(/[^}]*#marker[^{]*\{[^}]*\}/gi, '')
+      css = css.replace(/[^}]*\.arrowhead[^{]*\{[^}]*\}/gi, '')
+      css = css.replace(/[^}]*\.arrowMarker[^{]*\{[^}]*\}/gi, '')
+      css = css.replace(/[^}]*\[marker-end\][^{]*\{[^}]*\}/gi, '')
+      css = css.replace(/[^}]*\[marker-start\][^{]*\{[^}]*\}/gi, '')
+
+      styleTag.textContent = css
+    })
+
     // Process all style attributes to convert inline styles to attributes
     const allElements = svgClone.querySelectorAll('*')
     allElements.forEach((el, index) => {
+      // Skip elements inside marker definitions - they'll be handled separately
+      if (el.closest('marker')) {
+        return
+      }
+
       if (el.hasAttribute('style')) {
         const style = el.getAttribute('style')
         const styleProps = style.split(';').map(s => s.trim()).filter(Boolean)
@@ -239,6 +293,23 @@ function App() {
         el.removeAttribute('style')
       }
 
+      // Check if this is an edge/connection path BEFORE removing classes
+      const isEdgePath = el.classList.contains('flowchart-link') ||
+                        el.classList.contains('edgePath') ||
+                        el.hasAttribute('marker-end') ||
+                        el.hasAttribute('marker-start')
+
+      // Remove class attributes to prevent CSS conflicts in Inkscape
+      // After we've converted all styles to explicit attributes, classes are no longer needed
+      if (el.hasAttribute('class')) {
+        el.removeAttribute('class')
+      }
+
+      // CRITICAL: Edge paths must have fill="none" to render as strokes in Inkscape
+      if (isEdgePath) {
+        el.setAttribute('fill', 'none')
+      }
+
       // Apply computed styles from original element if no explicit attribute
       const styles = elementStyles.get(index)
       if (styles) {
@@ -249,50 +320,43 @@ function App() {
           el.setAttribute('stroke', rgbToHex(styles.stroke))
         }
       }
-    })
 
-    // Specifically handle marker elements in defs (arrowheads)
-    // Extract colors from paths that USE the markers
-    const markerColors = new Map()
-    const pathsWithMarkers = svgElement.querySelectorAll('[marker-end], [marker-start], [marker-mid]')
-    pathsWithMarkers.forEach(path => {
-      const computed = window.getComputedStyle(path)
-      const strokeColor = computed.stroke && computed.stroke !== 'none' ? rgbToHex(computed.stroke) : '#333333'
-
-      // Check all marker types
-      const markerEnd = path.getAttribute('marker-end')
-      const markerStart = path.getAttribute('marker-start')
-      const markerMid = path.getAttribute('marker-mid')
-
-      // Extract marker ID from url(#markerId) format
-      const extractMarkerId = (markerAttr) => {
-        if (!markerAttr) return null
-        const match = markerAttr.match(/url\(#([^)]+)\)/)
-        return match ? match[1] : null
+      // For edge paths, ensure stroke-width is explicitly set (was in CSS, now classes are removed)
+      if (isEdgePath && !el.hasAttribute('stroke-width')) {
+        const computed = window.getComputedStyle(originalElements[index])
+        const strokeWidth = computed.strokeWidth || '2px'
+        el.setAttribute('stroke-width', strokeWidth)
       }
-
-      const markerIds = [
-        extractMarkerId(markerEnd),
-        extractMarkerId(markerStart),
-        extractMarkerId(markerMid)
-      ].filter(Boolean)
-
-      markerIds.forEach(markerId => {
-        markerColors.set(markerId, strokeColor)
-      })
     })
 
-    // Apply colors to cloned markers
+    // Apply colors to cloned markers - process these AFTER all other style conversions
     const markers = svgClone.querySelectorAll('defs marker')
     markers.forEach(marker => {
       const markerId = marker.getAttribute('id')
       const color = markerColors.get(markerId) || '#333333'
 
+      // Ensure marker has proper attributes for Inkscape compatibility
+      if (!marker.hasAttribute('orient')) {
+        marker.setAttribute('orient', 'auto')
+      }
+      if (!marker.hasAttribute('markerUnits')) {
+        marker.setAttribute('markerUnits', 'strokeWidth')
+      }
+
       const markerShapes = marker.querySelectorAll('path, polygon, circle, polyline')
       markerShapes.forEach(shape => {
-        if (!shape.hasAttribute('fill') || shape.getAttribute('fill') === '') {
-          shape.setAttribute('fill', color)
-        }
+        // For Inkscape: Keep markers filled (as intended) but with the correct color
+        // Setting fill to the path stroke color ensures consistent rendering
+        shape.setAttribute('fill', color)
+
+        // Remove stroke to prevent double rendering
+        shape.setAttribute('stroke', 'none')
+
+        // Completely remove style attribute - let explicit attributes take precedence
+        shape.removeAttribute('style')
+
+        // Remove classes that might apply conflicting CSS styling
+        shape.removeAttribute('class')
       })
     })
 
