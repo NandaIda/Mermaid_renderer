@@ -569,6 +569,9 @@ function App() {
             </a>
           </div>
         </div>
+        <div className="mobile-notice">
+          <p>For best experience on mobile, please enable Desktop Mode in your browser settings</p>
+        </div>
       </header>
 
       <div className="tabs">

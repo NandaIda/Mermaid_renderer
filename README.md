@@ -2,6 +2,8 @@
 
 A modern, interactive web application for creating and visualizing Mermaid diagrams in real-time.
 
+**Live Demo**: [https://mermaid-renderer-eight.vercel.app/](https://mermaid-renderer-eight.vercel.app/)
+
 ## Features
 
 - **Live Preview**: See your diagrams update in real-time as you type
@@ -24,6 +26,10 @@ A modern, interactive web application for creating and visualizing Mermaid diagr
 
 - Node.js (v16 or higher)
 - npm or yarn
+
+### Mobile Usage
+
+When accessing on mobile devices, please enable **Desktop Mode** in your browser for the best experience. A notification will appear on mobile screens with this reminder.
 
 ### Installation
 
