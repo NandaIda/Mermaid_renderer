@@ -97,3 +97,7 @@ npm run preview
 - [Mermaid Documentation](https://mermaid.js.org/)
 - [React Documentation](https://react.dev/)
 - [Vite Documentation](https://vitejs.dev/)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

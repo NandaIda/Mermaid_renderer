@@ -3,6 +3,12 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "license": "MIT",
+  "author": "NandaIda <suanandayogi@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NandaIda/Mermaid_renderer.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
