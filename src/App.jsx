@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import MermaidRenderer from './MermaidRenderer'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useHistory } from './hooks/useHistory'
+import { convertSvgToInkscape } from './utils/inkscapeConverter'
 import './App.css'
 
 const defaultDiagram = `graph TD
@@ -67,6 +68,7 @@ function App() {
   const [showPngDialog, setShowPngDialog] = useState(false)
   const [pngSize, setPngSize] = useState({ width: 1920, height: 1080 })
   const [aspectRatio, setAspectRatio] = useState(1920 / 1080)
+  const [isConverting, setIsConverting] = useState(false)
 
   const mermaidRef = useRef(null)
   const textareaRef = useRef(null)
@@ -171,7 +173,8 @@ function App() {
 
     // Helper function to convert RGB to hex
     const rgbToHex = (color) => {
-      const rgbMatch = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/)
+      if (!color || color === 'none') return color
+      const rgbMatch = color.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/)
       if (rgbMatch) {
         const r = parseInt(rgbMatch[1]).toString(16).padStart(2, '0')
         const g = parseInt(rgbMatch[2]).toString(16).padStart(2, '0')
@@ -184,7 +187,25 @@ function App() {
     // Extract text and styles from original foreignObjects (while they're still in DOM)
     const originalForeignObjects = svgElement.querySelectorAll('foreignObject')
     const textData = Array.from(originalForeignObjects).map(fo => {
-      const textContent = fo.textContent?.trim() || ''
+      // Extract text by processing the raw innerHTML
+      let textContent = ''
+      let rawHTML = fo.innerHTML || ''
+
+      // Replace <br> and <br/> with spaces BEFORE any other processing
+      rawHTML = rawHTML.replace(/<br\s*\/?>/gi, ' ')
+
+      // Now parse it to extract text
+      const tempDiv = document.createElement('div')
+      tempDiv.innerHTML = rawHTML
+      textContent = tempDiv.textContent || ''
+
+      // Decode HTML entities
+      textContent = textContent.replace(/&nbsp;/g, ' ')
+                               .replace(/&amp;/g, '&')
+                               .replace(/&lt;/g, '<')
+                               .replace(/&gt;/g, '>')
+
+      textContent = textContent.trim()
 
       // Get the bounding box which accounts for all transformations
       const bbox = fo.getBBox()
@@ -392,20 +413,52 @@ function App() {
       // Ensure no stroke that might hide the text
       textElement.setAttribute('stroke', 'none')
 
-      // Handle multi-line text
-      const lines = data.textContent.split('\n').filter(l => l.trim())
-      if (lines.length > 1) {
+      // Text wrapping function
+      const wrapText = (text, maxWidth) => {
+        const cleanText = text.replace(/\s+/g, ' ').trim()
+        const words = cleanText.split(' ')
+        const lines = []
+        let currentLine = ''
+
+        const fontSize = parseFloat(data.styles.fontSize) || 16
+        const avgCharWidth = fontSize * 0.5
+
+        words.forEach(word => {
+          const testLine = currentLine ? currentLine + ' ' + word : word
+          const testWidth = testLine.length * avgCharWidth
+
+          if (testWidth > maxWidth && currentLine !== '') {
+            lines.push(currentLine)
+            currentLine = word
+          } else {
+            currentLine = testLine
+          }
+        })
+
+        if (currentLine) {
+          lines.push(currentLine)
+        }
+
+        return lines.length > 0 ? lines : [cleanText]
+      }
+
+      // Apply word wrapping
+      const allLines = wrapText(data.textContent, data.width)
+
+      if (allLines.length > 1) {
         const lineHeight = parseFloat(data.styles.fontSize) * 1.2
-        const totalHeight = lineHeight * lines.length
+        const totalHeight = lineHeight * allLines.length
         const startY = centerY - totalHeight / 2 + lineHeight / 2
 
-        lines.forEach((line, lineIndex) => {
+        allLines.forEach((line, lineIndex) => {
           const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
           tspan.setAttribute('x', centerX.toString())
           tspan.setAttribute('y', (startY + lineIndex * lineHeight).toString())
-          tspan.textContent = line.trim()
+          tspan.textContent = line || ' '
           textElement.appendChild(tspan)
         })
+      } else if (allLines.length === 1) {
+        textElement.textContent = allLines[0]
       } else {
         textElement.textContent = data.textContent
       }
@@ -428,6 +481,48 @@ function App() {
     link.download = `${activeTab.name}.svg`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleSVGFileUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsConverting(true)
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const svgContent = event.target.result
+
+        // Convert the SVG
+        const convertedSVG = convertSvgToInkscape(svgContent)
+
+        // Automatic download of the converted file
+        const blob = new Blob([convertedSVG], { type: 'image/svg+xml;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = file.name.replace('.svg', '-inkscape.svg')
+        link.click()
+        URL.revokeObjectURL(url)
+
+        setIsConverting(false)
+      } catch (error) {
+        console.error('Error converting SVG:', error)
+        alert(`Failed to convert SVG: ${error.message}`)
+        setIsConverting(false)
+      }
+    }
+
+    reader.onerror = () => {
+      alert('Failed to read the file')
+      setIsConverting(false)
+    }
+
+    reader.readAsText(file)
+
+    // Reset input so the same file can be uploaded again
+    e.target.value = ''
   }
 
   const openPngDialog = () => {
@@ -533,6 +628,25 @@ function App() {
             <h1>Mermaid Diagram Renderer</h1>
           </div>
           <div className="header-controls">
+            <label className={`icon-btn ${isConverting ? 'converting' : ''}`} title="Convert Mermaid SVG to Inkscape">
+              <input
+                type="file"
+                accept=".svg"
+                onChange={handleSVGFileUpload}
+                style={{ display: 'none' }}
+                disabled={isConverting}
+              />
+              {isConverting ? (
+                <svg height="24" viewBox="0 0 24 24" width="24" fill="currentColor" className="spinner">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" opacity="0.25"></circle>
+                  <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <svg height="24" viewBox="0 0 24 24" width="24" fill="currentColor">
+                  <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"></path>
+                </svg>
+              )}
+            </label>
             <button
               onClick={() => setTheme(theme === 'default' ? 'dark' : 'default')}
               className="icon-btn"
