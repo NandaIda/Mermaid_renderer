@@ -134,7 +134,10 @@ function App() {
     setIsAssisting(true)
     try {
       const activeCode = activeTab?.code || ''
-      const newCode = await assistMermaidCode(activeCode, assistInstruction)
+      // Get current error from renderer if any
+      const currentError = mermaidRef.current?.getError() || null
+      
+      const newCode = await assistMermaidCode(activeCode, assistInstruction, currentError)
       
       updateTabCode(newCode)
       history.push(newCode)

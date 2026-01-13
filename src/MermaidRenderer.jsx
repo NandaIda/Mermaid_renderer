@@ -9,7 +9,8 @@ const MermaidRenderer = forwardRef(({ chart, theme = 'default', onFixCode }, ref
 
   useImperativeHandle(ref, () => ({
     getSvgElement: () => mermaidRef.current?.querySelector('svg'),
-    getContainer: () => mermaidRef.current
+    getContainer: () => mermaidRef.current,
+    getError: () => error
   }))
 
   useEffect(() => {

@@ -50,6 +50,8 @@ const callAI = async (messages) => {
   }
 };
 
+const ERROR_KNOWLEDGE_BASE = "\nCRITICAL KNOWLEDGE BASE - COMMON MERMAID ERRORS & FIXES:\n\n1. **FLOWCHARTS (graph/flowchart)**:\n   - **Error**: \"Expecting 'PS', 'PE', 'SQS', 'SQE'...\" or \"got 'PS'\" (Parenthesis Start).\n     - **Cause**: Using special characters like parentheses `()`, brackets `[]`, or braces `{}` inside node labels without quotes.\n     - **Fix**: Wrap the ENTIRE label text in double quotes.\n     - *Bad*: `A[User (Admin)]`\n     - *Good*:   `A[\"User (Admin)\"]`\n   - **Error**: \"Expecting 'SEMI', 'NEWLINE'...\" inside a label.\n     - **Fix**: Also wrap the label in double quotes.\n\n2. **SEQUENCE DIAGRAMS**:\n   - **Error**: \"Expecting ... got 'TXT'\" near `style`, `classDef`, or `class` keywords.\n     - **Cause**: Sequence diagrams do NOT support `style`, `classDef`, or `class` for styling individual participants.\n     - **Fix**: DELETE these lines completely. Do not try to fix them; just remove them.\n   - **Error**: Invalid arrow types.\n     - **Fix**: Use standard arrows: `->`, `-->`, `->>`, `-->>`.\n\n3. **CLASS DIAGRAMS**:\n   - **Error**: \"Expecting 'L_BRACKET'...\"\n     - **Fix**: Ensure styling and definitions follow Class Diagram syntax (e.g., `class Name { ... }`).\n\n4. **GENERAL SYNTAX**:\n   - **Error**: \"subgraph\" missing \"end\".\n     - **Fix**: Add the `end` keyword to close the subgraph block.\n    - **Output Format**: Return ONLY the raw Mermaid code. NO Markdown code blocks (no ````mermaid). NO explanations.\n";
+
 /**
  * Uses AI to fix broken Mermaid code based on the error message.
  * @param {string} code - The broken Mermaid code.
@@ -60,8 +62,8 @@ export const fixMermaidCode = async (code, error) => {
   const systemPrompt = 
     "You are an expert in Mermaid.js diagramming. " +
     "Your task is to fix broken Mermaid code based on the provided error message. " +
-    "Return ONLY the corrected Mermaid code. Do not include markdown code blocks, " +
-    "explanations, or conversational text. Just the raw code.";
+    "Use the following knowledge base to identify and fix errors:\n" + 
+    ERROR_KNOWLEDGE_BASE;
 
   const userPrompt = `Here is the broken Mermaid code:\n\n${code}\n\nError message:\n${error}\n\nPlease fix it.`;
 
@@ -75,17 +77,24 @@ export const fixMermaidCode = async (code, error) => {
  * Uses AI to modify/fix Mermaid code based on user instruction.
  * @param {string} code - The current Mermaid code.
  * @param {string} instruction - The user's instruction or description of what's wrong.
+ * @param {string} [errorLog] - Optional error log from Mermaid renderer.
  * @returns {Promise<string>} - The updated Mermaid code.
  */
-export const assistMermaidCode = async (code, instruction) => {
+export const assistMermaidCode = async (code, instruction, errorLog = null) => {
   const systemPrompt = 
     "You are an expert in Mermaid.js diagramming. " +
     "Your task is to modify the provided Mermaid code based on the user's instruction. " +
-    "The user might describe a visual bug (e.g., 'arrow is broken') or ask for a change. " +
-    "Analyze the code and the request, then return ONLY the updated/corrected Mermaid code. " +
-    "Do not include markdown code blocks, explanations, or conversational text. Just the raw code.";
+    "Use the following knowledge base to ensure the resulting code is valid:\n" +
+    ERROR_KNOWLEDGE_BASE;
 
-  const userPrompt = `Current Mermaid code:\n\n${code}\n\nUser Instruction:\n${instruction}\n\nPlease update the code accordingly.`;
+  let userPrompt = `Current Mermaid code:\n\n${code}\n\nUser Instruction:\n${instruction}`;
+  
+  if (errorLog) {
+    userPrompt += `\n\nCurrent Error Log:\n${errorLog}`;
+    userPrompt += `\n\nAnalyze the error log against the Knowledge Base above. If you see a matching pattern (e.g., "got 'PS'", apply the specific fix (e.g., add quotes).`;
+  }
+  
+  userPrompt += `\n\nPlease update the code accordingly.`;
 
   return callAI([
     { role: "system", content: systemPrompt },
