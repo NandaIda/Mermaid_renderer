@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 're
 import mermaid from 'mermaid'
 import { fixMermaidCode } from './utils/aiCorrection'
 
-const MermaidRenderer = forwardRef(({ chart, theme = 'default', onFixCode }, ref) => {
+const MermaidRenderer = forwardRef(({ chart, theme = 'default', onFixCode, llmSettings }, ref) => {
   const mermaidRef = useRef(null)
   const [error, setError] = useState(null)
   const [isFixing, setIsFixing] = useState(false)
@@ -34,10 +34,14 @@ const MermaidRenderer = forwardRef(({ chart, theme = 'default', onFixCode }, ref
 
   useEffect(() => {
     const renderDiagram = async () => {
-      if (!mermaidRef.current || !chart) return
+      if (!chart) return
 
       try {
+        // Clear any previous error when chart changes
         setError(null)
+
+        if (!mermaidRef.current) return
+
         // Clear previous content
         mermaidRef.current.innerHTML = ''
 
@@ -58,10 +62,10 @@ const MermaidRenderer = forwardRef(({ chart, theme = 'default', onFixCode }, ref
 
   const handleFix = async () => {
     if (!chart || !error) return
-    
+
     setIsFixing(true)
     try {
-      const fixedCode = await fixMermaidCode(chart, error)
+      const fixedCode = await fixMermaidCode(chart, error, llmSettings)
       if (onFixCode) {
         onFixCode(fixedCode)
       }
@@ -72,58 +76,59 @@ const MermaidRenderer = forwardRef(({ chart, theme = 'default', onFixCode }, ref
     }
   }
 
-  if (error) {
-    return (
-      <div className="error">
-        <h3>Error rendering diagram:</h3>
-        <pre>{error}</pre>
-        <button 
-          onClick={handleFix} 
-          disabled={isFixing}
-          className="fix-btn"
-          style={{
-            marginTop: '10px',
-            padding: '8px 16px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: isFixing ? 'wait' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontWeight: 'bold'
-          }}
-        >
-          {isFixing ? (
-            <>
-              <span className="spinner-small" style={{
-                width: '16px',
-                height: '16px',
-                border: '2px solid rgba(255,255,255,0.3)',
-                borderRadius: '50%',
-                borderTopColor: 'white',
-                animation: 'spin 1s linear infinite',
-                display: 'inline-block'
-              }}></span>
-              Fixing with AI...
-            </>
-          ) : (
-            <>
-              <span>✨</span> Fix with AI
-            </>
-          )}
-        </button>
-        <style>{`
-          @keyframes spin {
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
-      </div>
-    )
-  }
-
-  return <div ref={mermaidRef} className="mermaid-container" />
+  return (
+    <>
+      <div ref={mermaidRef} className="mermaid-container" style={{ display: error ? 'none' : 'block' }} />
+      {error && (
+        <div className="error">
+          <h3>Error rendering diagram:</h3>
+          <pre>{error}</pre>
+          <button
+            onClick={handleFix}
+            disabled={isFixing}
+            className="fix-btn"
+            style={{
+              marginTop: '10px',
+              padding: '8px 16px',
+              backgroundColor: '#4CAF50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: isFixing ? 'wait' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontWeight: 'bold'
+            }}
+          >
+            {isFixing ? (
+              <>
+                <span className="spinner-small" style={{
+                  width: '16px',
+                  height: '16px',
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  borderRadius: '50%',
+                  borderTopColor: 'white',
+                  animation: 'spin 1s linear infinite',
+                  display: 'inline-block'
+                }}></span>
+                Fixing with AI...
+              </>
+            ) : (
+              <>
+                <span>✨</span> Fix with AI
+              </>
+            )}
+          </button>
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      )}
+    </>
+  )
 })
 
 MermaidRenderer.displayName = 'MermaidRenderer'

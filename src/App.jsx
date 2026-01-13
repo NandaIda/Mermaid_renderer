@@ -68,11 +68,17 @@ function App() {
   const [nextId, setNextId] = useState(2)
   const [showPngDialog, setShowPngDialog] = useState(false)
   const [showAssistDialog, setShowAssistDialog] = useState(false)
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [assistInstruction, setAssistInstruction] = useState('')
   const [isAssisting, setIsAssisting] = useState(false)
   const [pngSize, setPngSize] = useState({ width: 1920, height: 1080 })
   const [aspectRatio, setAspectRatio] = useState(1920 / 1080)
   const [isConverting, setIsConverting] = useState(false)
+  const [llmSettings, setLlmSettings] = useLocalStorage('mermaid-llm-settings', {
+    apiUrl: '',
+    model: '',
+    apiKey: ''
+  })
 
   const mermaidRef = useRef(null)
   const textareaRef = useRef(null)
@@ -130,18 +136,18 @@ function App() {
 
   const handleAssist = async () => {
     if (!assistInstruction.trim()) return
-    
+
     setIsAssisting(true)
     try {
       const activeCode = activeTab?.code || ''
       // Get current error from renderer if any
       const currentError = mermaidRef.current?.getError() || null
-      
-      const newCode = await assistMermaidCode(activeCode, assistInstruction, currentError)
-      
+
+      const newCode = await assistMermaidCode(activeCode, assistInstruction, currentError, llmSettings)
+
       updateTabCode(newCode)
       history.push(newCode)
-      
+
       // Close dialog and reset
       setShowAssistDialog(false)
       setAssistInstruction('')
@@ -620,9 +626,9 @@ function App() {
   useEffect(() => {
     const timer = setTimeout(() => {
       handleRecenter()
-    }, 100)
+    }, 300)
     return () => clearTimeout(timer)
-  }, [activeTab?.code, activeTabId])
+  }, [(tabs.find(tab => tab.id === activeTabId) || tabs[0])?.code, activeTabId])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -702,6 +708,15 @@ function App() {
                   <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" strokeWidth="2"></line>
                 </svg>
               )}
+            </button>
+            <button
+              onClick={() => setShowSettingsDialog(true)}
+              className="icon-btn"
+              title="LLM Settings"
+            >
+              <svg height="24" viewBox="0 0 24 24" width="24" fill="currentColor">
+                <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"></path>
+              </svg>
             </button>
             <a
               href="https://github.com/NandaIda/Mermaid_renderer"
@@ -804,7 +819,7 @@ function App() {
           <h2>Mermaid Code</h2>
           <textarea
             ref={textareaRef}
-            value={activeTab?.code || ''}
+            value={(tabs.find(tab => tab.id === activeTabId) || tabs[0])?.code || ''}
             onChange={handleCodeChange}
             placeholder="Enter your mermaid diagram code here..."
             spellCheck="false"
@@ -865,11 +880,12 @@ function App() {
                 className="preview-zoom-wrapper"
                 style={{ transform: `scale(${zoom})` }}
               >
-                <MermaidRenderer 
-                  ref={mermaidRef} 
-                  chart={activeTab?.code || ''} 
-                  theme={theme} 
+                <MermaidRenderer
+                  ref={mermaidRef}
+                  chart={(tabs.find(tab => tab.id === activeTabId) || tabs[0])?.code || ''}
+                  theme={theme}
                   onFixCode={handleFixCode}
+                  llmSettings={llmSettings}
                 />
               </div>
             </div>
@@ -962,6 +978,97 @@ function App() {
               </button>
               <button onClick={exportPNG} className="dialog-btn export-btn">
                 Export PNG
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettingsDialog && (
+        <div className="dialog-overlay" onClick={() => setShowSettingsDialog(false)}>
+          <div className="dialog settings-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>LLM Settings</h3>
+            <p className="dialog-description">Configure your custom LLM provider (OpenAI API compatible)</p>
+            <div className="dialog-content">
+              <div className="settings-form">
+                <label>
+                  API URL:
+                  <input
+                    type="text"
+                    value={llmSettings.apiUrl}
+                    onChange={(e) => setLlmSettings({ ...llmSettings, apiUrl: e.target.value })}
+                    placeholder="https://api.openai.com/v1/chat/completions"
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      marginTop: '4px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-color)',
+                      color: 'var(--text-color)',
+                      fontFamily: 'monospace',
+                      fontSize: '0.9rem'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px', display: 'block' }}>
+                    OpenAI API compatible endpoint
+                  </span>
+                </label>
+                <label>
+                  Model:
+                  <input
+                    type="text"
+                    value={llmSettings.model}
+                    onChange={(e) => setLlmSettings({ ...llmSettings, model: e.target.value })}
+                    placeholder="gpt-4"
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      marginTop: '4px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-color)',
+                      color: 'var(--text-color)',
+                      fontFamily: 'monospace',
+                      fontSize: '0.9rem'
+                    }}
+                  />
+                </label>
+                <label>
+                  API Key:
+                  <input
+                    type="password"
+                    value={llmSettings.apiKey}
+                    onChange={(e) => setLlmSettings({ ...llmSettings, apiKey: e.target.value })}
+                    placeholder="sk-..."
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      marginTop: '4px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: 'var(--bg-color)',
+                      color: 'var(--text-color)',
+                      fontFamily: 'monospace',
+                      fontSize: '0.9rem'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px', display: 'block' }}>
+                    Leave empty if not required
+                  </span>
+                </label>
+              </div>
+            </div>
+            <div className="dialog-actions">
+              <button onClick={() => setShowSettingsDialog(false)} className="dialog-btn cancel-btn">
+                Cancel
+              </button>
+              <button
+                onClick={() => setShowSettingsDialog(false)}
+                className="dialog-btn"
+                style={{ backgroundColor: '#667eea', color: 'white' }}
+              >
+                Save
               </button>
             </div>
           </div>

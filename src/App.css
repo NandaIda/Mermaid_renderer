@@ -544,6 +544,30 @@ textarea:focus {
   margin-bottom: 1.5rem;
 }
 
+.settings-dialog {
+  min-width: 500px;
+  max-width: 600px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.settings-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.theme-dark .settings-form label {
+  color: #e0e0e0;
+}
+
 .size-input-group {
   display: flex;
   gap: 1rem;
