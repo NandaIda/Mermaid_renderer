@@ -3,6 +3,7 @@ import MermaidRenderer from './MermaidRenderer'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useHistory } from './hooks/useHistory'
 import { convertSvgToInkscape } from './utils/inkscapeConverter'
+import { assistMermaidCode } from './utils/aiCorrection'
 import './App.css'
 
 const defaultDiagram = `graph TD
@@ -66,6 +67,9 @@ function App() {
   const [zoom, setZoom] = useState(1)
   const [nextId, setNextId] = useState(2)
   const [showPngDialog, setShowPngDialog] = useState(false)
+  const [showAssistDialog, setShowAssistDialog] = useState(false)
+  const [assistInstruction, setAssistInstruction] = useState('')
+  const [isAssisting, setIsAssisting] = useState(false)
   const [pngSize, setPngSize] = useState({ width: 1920, height: 1080 })
   const [aspectRatio, setAspectRatio] = useState(1920 / 1080)
   const [isConverting, setIsConverting] = useState(false)
@@ -117,6 +121,32 @@ function App() {
     const newCode = e.target.value
     updateTabCode(newCode)
     history.push(newCode)
+  }
+
+  const handleFixCode = (newCode) => {
+    updateTabCode(newCode)
+    history.push(newCode)
+  }
+
+  const handleAssist = async () => {
+    if (!assistInstruction.trim()) return
+    
+    setIsAssisting(true)
+    try {
+      const activeCode = activeTab?.code || ''
+      const newCode = await assistMermaidCode(activeCode, assistInstruction)
+      
+      updateTabCode(newCode)
+      history.push(newCode)
+      
+      // Close dialog and reset
+      setShowAssistDialog(false)
+      setAssistInstruction('')
+    } catch (err) {
+      alert(`AI Assistance failed: ${err.message}`)
+    } finally {
+      setIsAssisting(false)
+    }
   }
 
   const handleUndo = () => {
@@ -783,6 +813,19 @@ function App() {
             <h2>Preview</h2>
             <div className="zoom-controls">
               <button
+                onClick={() => setShowAssistDialog(true)}
+                className="zoom-btn ai-assist-btn"
+                title="Ask AI to improve or fix diagram"
+                style={{ 
+                  backgroundColor: '#673AB7', 
+                  color: 'white', 
+                  width: 'auto', 
+                  fontWeight: 'bold',
+                }}
+              >
+                ✨ AI Assist
+              </button>
+              <button
                 onClick={handleZoomOut}
                 className="zoom-btn"
                 title="Zoom Out (Ctrl+-)"
@@ -819,12 +862,66 @@ function App() {
                 className="preview-zoom-wrapper"
                 style={{ transform: `scale(${zoom})` }}
               >
-                <MermaidRenderer ref={mermaidRef} chart={activeTab?.code || ''} theme={theme} />
+                <MermaidRenderer 
+                  ref={mermaidRef} 
+                  chart={activeTab?.code || ''} 
+                  theme={theme} 
+                  onFixCode={handleFixCode}
+                />
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {showAssistDialog && (
+        <div className="dialog-overlay" onClick={() => !isAssisting && setShowAssistDialog(false)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>AI Assistant</h3>
+            <p className="dialog-description">
+              Describe what's wrong or what you want to change.
+            </p>
+            <div className="dialog-content">
+              <textarea
+                value={assistInstruction}
+                onChange={(e) => setAssistInstruction(e.target.value)}
+                placeholder="e.g., 'The arrow from B to D is broken', 'Change all rectangles to diamonds', 'Add a new node for Logging'"
+                style={{
+                  width: '100%',
+                  minHeight: '100px',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color)',
+                  backgroundColor: 'var(--bg-color)',
+                  color: 'var(--text-color)',
+                  resize: 'vertical',
+                  marginBottom: '10px',
+                  fontFamily: 'inherit'
+                }}
+                disabled={isAssisting}
+                autoFocus
+              />
+            </div>
+            <div className="dialog-actions">
+              <button 
+                onClick={() => setShowAssistDialog(false)} 
+                className="dialog-btn cancel-btn"
+                disabled={isAssisting}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAssist} 
+                className="dialog-btn"
+                style={{ backgroundColor: '#673AB7', color: 'white' }}
+                disabled={isAssisting || !assistInstruction.trim()}
+              >
+                {isAssisting ? 'Thinking...' : 'Ask AI'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPngDialog && (
         <div className="dialog-overlay" onClick={() => setShowPngDialog(false)}>
