@@ -224,19 +224,24 @@ function App() {
     }
 
     // Extract text and styles from original foreignObjects (while they're still in DOM)
+    const BREAK_MARKER = '\u000B'  // vertical tab - won't be collapsed by HTML parsing
     const originalForeignObjects = svgElement.querySelectorAll('foreignObject')
     const textData = Array.from(originalForeignObjects).map(fo => {
-      // Extract text by processing the raw innerHTML
+      // Extract text by walking DOM nodes to preserve <br> as explicit line breaks
       let textContent = ''
-      let rawHTML = fo.innerHTML || ''
 
-      // Replace <br> and <br/> with spaces BEFORE any other processing
-      rawHTML = rawHTML.replace(/<br\s*\/?>/gi, ' ')
-
-      // Now parse it to extract text
-      const tempDiv = document.createElement('div')
-      tempDiv.innerHTML = rawHTML
-      textContent = tempDiv.textContent || ''
+      const walkNodes = (node) => {
+        if (node.nodeName === 'BR') {
+          textContent += BREAK_MARKER
+          return
+        }
+        if (node.nodeType === Node.TEXT_NODE) {
+          textContent += node.textContent
+          return
+        }
+        node.childNodes.forEach(child => walkNodes(child))
+      }
+      walkNodes(fo)
 
       // Decode HTML entities
       textContent = textContent.replace(/&nbsp;/g, ' ')
@@ -253,6 +258,22 @@ function App() {
       const width = bbox.width
       const height = bbox.height
 
+      // Detect label type by checking parent elements
+      let labelType = 'node'
+      let parent = fo.parentElement
+      while (parent && parent !== svgElement) {
+        const cls = parent.getAttribute('class') || ''
+        if (cls.includes('edgeLabel')) {
+          labelType = 'edge'
+          break
+        }
+        if (cls.includes('cluster-label')) {
+          labelType = 'cluster'
+          break
+        }
+        parent = parent.parentElement
+      }
+
       // Get computed styles from the first styled element
       const styledElement = fo.querySelector('div, span, p, body')
       let styles = {
@@ -261,6 +282,7 @@ function App() {
         fontFamily: 'Arial, sans-serif',
         fontWeight: 'normal'
       }
+      let bgColor = null
 
       if (styledElement) {
         const computed = window.getComputedStyle(styledElement)
@@ -270,9 +292,16 @@ function App() {
           fontFamily: computed.fontFamily || 'Arial, sans-serif',
           fontWeight: computed.fontWeight || 'normal'
         }
+        // Extract background color for edge labels
+        if (labelType === 'edge') {
+          const bg = computed.backgroundColor
+          if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+            bgColor = rgbToHex(bg)
+          }
+        }
       }
 
-      return { textContent, x, y, width, height, styles }
+      return { textContent, x, y, width, height, styles, labelType, bgColor }
     })
 
     // First, extract computed styles from original elements before cloning
@@ -282,7 +311,9 @@ function App() {
       const computed = window.getComputedStyle(el)
       elementStyles.set(index, {
         fill: computed.fill,
-        stroke: computed.stroke
+        stroke: computed.stroke,
+        strokeWidth: computed.strokeWidth,
+        strokeDasharray: computed.strokeDasharray
       })
     })
 
@@ -378,6 +409,8 @@ function App() {
       // Check if this is an edge/connection path BEFORE removing classes
       const isEdgePath = el.classList.contains('flowchart-link') ||
                         el.classList.contains('edgePath') ||
+                        el.classList.contains('messageLine0') ||
+                        el.classList.contains('messageLine1') ||
                         el.hasAttribute('marker-end') ||
                         el.hasAttribute('marker-start')
 
@@ -387,18 +420,27 @@ function App() {
         el.removeAttribute('class')
       }
 
-      // CRITICAL: Edge paths must have fill="none" to render as strokes in Inkscape
-      if (isEdgePath) {
-        el.setAttribute('fill', 'none')
-      }
-
-      // Apply computed styles from original element if no explicit attribute
+      // Apply computed styles from original element
+      // Always apply (even if attribute exists) because CSS class-based styles
+      // are the authoritative values and classes are being removed
       const styles = elementStyles.get(index)
-      if (styles && !el.hasAttribute('fill') && styles.fill && styles.fill !== 'none' && styles.fill !== 'rgba(0, 0, 0, 0)') {
+      if (styles && styles.fill && styles.fill !== 'none' && styles.fill !== 'rgba(0, 0, 0, 0)') {
         el.setAttribute('fill', rgbToHex(styles.fill))
       }
-      if (styles && !el.hasAttribute('stroke') && styles.stroke && styles.stroke !== 'none' && styles.stroke !== 'rgba(0, 0, 0, 0)') {
+      if (styles && styles.stroke && styles.stroke !== 'none' && styles.stroke !== 'rgba(0, 0, 0, 0)') {
         el.setAttribute('stroke', rgbToHex(styles.stroke))
+      }
+      if (styles && styles.strokeWidth && styles.strokeWidth !== '0px') {
+        el.setAttribute('stroke-width', styles.strokeWidth)
+      }
+      if (styles && styles.strokeDasharray && styles.strokeDasharray !== 'none') {
+        el.setAttribute('stroke-dasharray', styles.strokeDasharray)
+      }
+
+      // CRITICAL: Edge paths must have fill="none" to render as strokes in Inkscape
+      // This must come AFTER computed styles so it overrides the computed fill
+      if (isEdgePath) {
+        el.setAttribute('fill', 'none')
       }
     })
 
@@ -419,6 +461,10 @@ function App() {
         shape.removeAttribute('class')
       })
     })
+
+    // Create canvas for accurate text width measurement
+    const measureCanvas = document.createElement('canvas')
+    const measureCtx = measureCanvas.getContext('2d')
 
     // Replace foreignObjects with text elements in-place
     const clonedForeignObjects = Array.from(svgClone.querySelectorAll('foreignObject'))
@@ -444,7 +490,15 @@ function App() {
       // Apply styles - ensure text is visible with explicit color
       textElement.setAttribute('fill', data.styles.color)
       textElement.setAttribute('font-size', data.styles.fontSize)
-      textElement.setAttribute('font-family', data.styles.fontFamily)
+
+      // Add emoji font families if text contains emoji characters
+      let fontFamily = data.styles.fontFamily
+      const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/u
+      if (emojiRegex.test(data.textContent)) {
+        fontFamily = `${fontFamily}, "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", "Twemoji Mozilla", sans-serif`
+      }
+      textElement.setAttribute('font-family', fontFamily)
+
       if (data.styles.fontWeight !== 'normal' && data.styles.fontWeight !== '400') {
         textElement.setAttribute('font-weight', data.styles.fontWeight)
       }
@@ -452,37 +506,50 @@ function App() {
       // Ensure no stroke that might hide the text
       textElement.setAttribute('stroke', 'none')
 
-      // Text wrapping function
+      // Text wrapping: respect explicit line breaks (BREAK_MARKER), then wrap each segment by width
       const wrapText = (text, maxWidth) => {
-        const cleanText = text.replace(/\s+/g, ' ').trim()
-        const words = cleanText.split(' ')
-        const lines = []
-        let currentLine = ''
+        const fontWeight = data.styles.fontWeight || 'normal'
+        const fontSize = data.styles.fontSize || '14px'
+        const fontFamily = data.styles.fontFamily || 'Arial, sans-serif'
+        measureCtx.font = `${fontWeight} ${fontSize} ${fontFamily}`
 
-        const fontSize = parseFloat(data.styles.fontSize) || 16
-        const avgCharWidth = fontSize * 0.5
+        // Split on explicit line breaks first
+        const segments = text.split(BREAK_MARKER)
+        const allLines = []
 
-        words.forEach(word => {
-          const testLine = currentLine ? currentLine + ' ' + word : word
-          const testWidth = testLine.length * avgCharWidth
+        segments.forEach(segment => {
+          const cleanSegment = segment.replace(/\s+/g, ' ').trim()
+          if (!cleanSegment) return
+          const words = cleanSegment.split(' ')
+          let currentLine = ''
 
-          if (testWidth > maxWidth && currentLine !== '') {
-            lines.push(currentLine)
-            currentLine = word
-          } else {
-            currentLine = testLine
+          words.forEach(word => {
+            const testLine = currentLine ? currentLine + ' ' + word : word
+            const testWidth = measureCtx.measureText(testLine).width
+
+            if (testWidth > maxWidth && currentLine !== '') {
+              allLines.push(currentLine)
+              currentLine = word
+            } else {
+              currentLine = testLine
+            }
+          })
+
+          if (currentLine) {
+            allLines.push(currentLine)
           }
         })
 
-        if (currentLine) {
-          lines.push(currentLine)
-        }
-
-        return lines.length > 0 ? lines : [cleanText]
+        return allLines.length > 0 ? allLines : [text.replace(new RegExp(BREAK_MARKER, 'g'), ' ').trim()]
       }
 
+      // Add width padding to prevent premature wrapping (Canvas measurement can differ slightly from browser)
+      const wrapWidth = data.labelType === 'cluster' ? data.width * 1.5
+                       : data.labelType === 'edge' ? data.width * 1.3
+                       : data.width * 1.15
+
       // Apply word wrapping
-      const allLines = wrapText(data.textContent, data.width)
+      const allLines = wrapText(data.textContent, wrapWidth)
 
       if (allLines.length > 1) {
         const lineHeight = parseFloat(data.styles.fontSize) * 1.2
@@ -502,8 +569,35 @@ function App() {
         textElement.textContent = data.textContent
       }
 
-      // Replace foreignObject with text element (preserve position in DOM)
-      fo.parentNode?.replaceChild(textElement, fo)
+      // For edge labels, add a background rect behind the text
+      if (data.labelType === 'edge') {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+
+        // Measure widest line for the background rect
+        const fontWeight = data.styles.fontWeight || 'normal'
+        const fontSize = data.styles.fontSize || '14px'
+        const fontFamily = data.styles.fontFamily || 'Arial, sans-serif'
+        measureCtx.font = `${fontWeight} ${fontSize} ${fontFamily}`
+        const textWidth = Math.max(...allLines.map(l => measureCtx.measureText(l).width))
+        const lineHeight = parseFloat(fontSize) * 1.2
+        const totalTextHeight = lineHeight * allLines.length
+        const padding = 4
+
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+        rect.setAttribute('x', (centerX - textWidth / 2 - padding).toString())
+        rect.setAttribute('y', (centerY - totalTextHeight / 2 - padding).toString())
+        rect.setAttribute('width', (textWidth + padding * 2).toString())
+        rect.setAttribute('height', (totalTextHeight + padding * 2).toString())
+        rect.setAttribute('fill', data.bgColor || '#ffffff')
+        rect.setAttribute('stroke', 'none')
+
+        g.appendChild(rect)
+        g.appendChild(textElement)
+        fo.parentNode?.replaceChild(g, fo)
+      } else {
+        // Replace foreignObject with text element (preserve position in DOM)
+        fo.parentNode?.replaceChild(textElement, fo)
+      }
     })
 
     // Serialize with proper formatting

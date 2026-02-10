@@ -56,12 +56,31 @@ const getApplicableStyles = (element, cssRules, idPrefix) => {
   const styles = {};
   const tagName = element.tagName.toLowerCase();
 
-  // Check if element is a descendant of certain classes (for descendant selectors)
-  const hasAncestorWithClass = (className) => {
+  // Match a selector part (like "text.actor", ".class", "rect") against an element
+  const matchesPart = (part, el) => {
+    const elTag = el.tagName ? el.tagName.toLowerCase() : '';
+    const elClasses = (el.getAttribute && el.getAttribute('class') || '').split(/\s+/);
+
+    // Compound selector: tag.class (e.g., "text.actor")
+    const dotIndex = part.indexOf('.');
+    if (dotIndex > 0) {
+      const partTag = part.substring(0, dotIndex);
+      const partClass = part.substring(dotIndex + 1);
+      return elTag === partTag && elClasses.includes(partClass);
+    }
+    // Class-only selector: .class
+    if (part.startsWith('.')) {
+      return elClasses.includes(part.substring(1));
+    }
+    // Tag-only selector
+    return elTag === part;
+  };
+
+  // Check if any ancestor matches a selector part
+  const hasAncestorMatching = (part) => {
     let parent = element.parentNode;
     while (parent && parent !== element.ownerDocument) {
-      const parentClasses = (parent.getAttribute && parent.getAttribute('class') || '').split(/\s+/);
-      if (parentClasses.includes(className)) {
+      if (parent.tagName && matchesPart(part, parent)) {
         return true;
       }
       parent = parent.parentNode;
@@ -73,32 +92,35 @@ const getApplicableStyles = (element, cssRules, idPrefix) => {
   for (const [selector, ruleStyles] of cssRules.entries()) {
     let matches = false;
 
-    // Handle descendant selectors like ".node rect" or ".cluster rect"
+    // Handle descendant/child selectors like ".node rect", "text.actor > tspan"
     if (selector.includes(' ')) {
-      const parts = selector.split(/\s+/);
+      // Split by whitespace, filter out > combinator
+      const parts = selector.split(/\s+/).filter(p => p !== '>');
 
       // Check if last part matches current element
       const lastPart = parts[parts.length - 1];
-      const matchesElement = lastPart === tagName ||
-                            (lastPart.startsWith('.') &&
-                             (element.getAttribute('class') || '').split(/\s+/).includes(lastPart.substring(1)));
+      const matchesElement = matchesPart(lastPart, element);
 
       if (matchesElement) {
-        // Check if any ancestor matches the parent selector
-        for (let i = 0; i < parts.length - 1; i++) {
-          const part = parts[i];
-          if (part.startsWith('#') && part !== '#' + idPrefix) continue;
-          if (part === '#' + idPrefix) continue;
+        if (parts.length === 1) {
+          matches = true;
+        } else {
+          // Check if any ancestor matches parent selector parts
+          for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i];
+            if (part.startsWith('#') && part !== '#' + idPrefix) continue;
+            if (part === '#' + idPrefix) continue;
 
-          if (part.startsWith('.')) {
-            const className = part.substring(1);
-            if (hasAncestorWithClass(className)) {
+            if (hasAncestorMatching(part)) {
               matches = true;
               break;
             }
           }
         }
       }
+    } else if (selector.includes('.') && !selector.startsWith('.')) {
+      // Compound selector without space: tag.class (e.g., "text.actor")
+      matches = matchesPart(selector, element);
     } else if (selector.startsWith('.')) {
       // Direct class selector
       const className = selector.substring(1).split(/[\s:,]+/)[0];
@@ -144,22 +166,26 @@ export const convertSvgToInkscape = (svgContent) => {
   console.log(`Parsed ${cssRules.size} CSS rules`);
 
   // Extract text and styles from original foreignObjects
+  const BREAK_MARKER = '\u000B';  // vertical tab as line break marker
   const originalForeignObjects = svgElement.querySelectorAll('foreignObject');
   const textData = Array.from(originalForeignObjects).map((fo, idx) => {
-    // Extract text by processing the raw innerHTML of foreignObject
-    // This ensures we catch <br/> tags before normalization
+    // Walk DOM nodes to preserve <br> as explicit line breaks
     let textContent = '';
 
-    // Get the raw HTML content of the foreignObject
-    let rawHTML = fo.innerHTML || '';
-
-    // Replace <br> and <br/> with spaces BEFORE any other processing
-    rawHTML = rawHTML.replace(/<br\s*\/?>/gi, ' ');
-
-    // Now parse it to extract text
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = rawHTML;
-    textContent = tempDiv.textContent || '';
+    const walkNodes = (node) => {
+      if (node.nodeName === 'BR') {
+        textContent += BREAK_MARKER;
+        return;
+      }
+      if (node.nodeType === 3 /* TEXT_NODE */) {
+        textContent += node.textContent;
+        return;
+      }
+      if (node.childNodes) {
+        node.childNodes.forEach(child => walkNodes(child));
+      }
+    };
+    walkNodes(fo);
 
     // Decode HTML entities
     textContent = textContent.replace(/&nbsp;/g, ' ')
@@ -205,7 +231,33 @@ export const convertSvgToInkscape = (svgContent) => {
       };
     }
 
-    return { textContent, x, y, width, height, styles };
+    // Detect label type by checking parent elements
+    let labelType = 'node';
+    let bgColor = null;
+    let parent = fo.parentElement;
+    while (parent && parent !== svgElement) {
+      const cls = parent.getAttribute('class') || '';
+      if (cls.includes('edgeLabel')) {
+        labelType = 'edge';
+        break;
+      }
+      if (cls.includes('cluster-label')) {
+        labelType = 'cluster';
+        break;
+      }
+      parent = parent.parentElement;
+    }
+
+    // Extract background color for edge labels
+    if (labelType === 'edge' && styledElement) {
+      const inlineStyle = styledElement.getAttribute('style') || '';
+      const bgMatch = inlineStyle.match(/background[- ]color:\s*([^;]+)/i);
+      if (bgMatch) {
+        bgColor = rgbToHex(bgMatch[1].trim());
+      }
+    }
+
+    return { textContent, x, y, width, height, styles, labelType, bgColor };
   });
 
   // Extract marker colors from paths BEFORE processing
@@ -289,6 +341,8 @@ export const convertSvgToInkscape = (svgContent) => {
     const classAttr = el.getAttribute('class') || '';
     const isEdgePath = classAttr.includes('flowchart-link') ||
                       classAttr.includes('edgePath') ||
+                      classAttr.includes('messageLine0') ||
+                      classAttr.includes('messageLine1') ||
                       el.hasAttribute('marker-end') ||
                       el.hasAttribute('marker-start');
 
@@ -341,6 +395,12 @@ export const convertSvgToInkscape = (svgContent) => {
       } else if (isEdgePath) {
         // Edge paths need visible stroke
         el.setAttribute('stroke-width', '2px');
+      }
+    }
+    if (!el.hasAttribute('stroke-dasharray') && (inlineStyles['stroke-dasharray'] || cssStyles['stroke-dasharray'])) {
+      const dasharray = inlineStyles['stroke-dasharray'] || cssStyles['stroke-dasharray'];
+      if (dasharray !== 'none') {
+        el.setAttribute('stroke-dasharray', dasharray);
       }
     }
     if (!el.hasAttribute('opacity') && (inlineStyles['opacity'] || cssStyles['opacity'])) {
@@ -397,6 +457,10 @@ export const convertSvgToInkscape = (svgContent) => {
     });
   });
 
+  // Create canvas for accurate text width measurement
+  const measureCanvas = document.createElement('canvas');
+  const measureCtx = measureCanvas.getContext('2d');
+
   // Replace foreignObjects with text elements
   const foreignObjects = Array.from(svgElement.querySelectorAll('foreignObject'));
   foreignObjects.forEach((fo, index) => {
@@ -415,7 +479,14 @@ export const convertSvgToInkscape = (svgContent) => {
     textElement.setAttribute('dominant-baseline', 'middle');
     textElement.setAttribute('fill', data.styles.color);
     textElement.setAttribute('font-size', data.styles.fontSize);
-    textElement.setAttribute('font-family', data.styles.fontFamily);
+
+    // Add emoji font families if text contains emoji characters
+    let fontFamily = data.styles.fontFamily;
+    const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/u;
+    if (emojiRegex.test(data.textContent)) {
+      fontFamily = `${fontFamily}, "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", "Twemoji Mozilla", sans-serif`;
+    }
+    textElement.setAttribute('font-family', fontFamily);
 
     if (data.styles.fontWeight !== 'normal' && data.styles.fontWeight !== '400') {
       textElement.setAttribute('font-weight', data.styles.fontWeight);
@@ -423,38 +494,49 @@ export const convertSvgToInkscape = (svgContent) => {
 
     textElement.setAttribute('stroke', 'none');
 
-    // Simple word wrapping - just wrap based on width
+    // Text wrapping: respect explicit line breaks (BREAK_MARKER), then wrap each segment by width
     const wrapText = (text, maxWidth) => {
-      // Clean and normalize the text first
-      const cleanText = text.replace(/\s+/g, ' ').trim();
-      const words = cleanText.split(' ');
-      const lines = [];
-      let currentLine = '';
+      const fontWeight = data.styles.fontWeight || 'normal';
+      const fontSize = data.styles.fontSize || '14px';
+      const fontFamily = data.styles.fontFamily || 'Arial, sans-serif';
+      measureCtx.font = `${fontWeight} ${fontSize} ${fontFamily}`;
 
-      const fontSize = parseFloat(data.styles.fontSize) || 16;
-      const avgCharWidth = fontSize * 0.5; // Approximate character width (reduced for less aggressive wrapping)
+      const segments = text.split(BREAK_MARKER);
+      const allLines = [];
 
-      words.forEach(word => {
-        const testLine = currentLine ? currentLine + ' ' + word : word;
-        const testWidth = testLine.length * avgCharWidth;
+      segments.forEach(segment => {
+        const cleanSegment = segment.replace(/\s+/g, ' ').trim();
+        if (!cleanSegment) return;
+        const words = cleanSegment.split(' ');
+        let currentLine = '';
 
-        if (testWidth > maxWidth && currentLine !== '') {
-          lines.push(currentLine);
-          currentLine = word;
-        } else {
-          currentLine = testLine;
+        words.forEach(word => {
+          const testLine = currentLine ? currentLine + ' ' + word : word;
+          const testWidth = measureCtx.measureText(testLine).width;
+
+          if (testWidth > maxWidth && currentLine !== '') {
+            allLines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        });
+
+        if (currentLine) {
+          allLines.push(currentLine);
         }
       });
 
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-
-      return lines.length > 0 ? lines : [cleanText];
+      return allLines.length > 0 ? allLines : [text.replace(new RegExp(BREAK_MARKER, 'g'), ' ').trim()];
     };
 
+    // Add width padding to prevent premature wrapping
+    const wrapWidth = data.labelType === 'cluster' ? data.width * 1.5
+                     : data.labelType === 'edge' ? data.width * 1.3
+                     : data.width * 1.15;
+
     // Apply word wrapping to the entire text
-    const allLines = wrapText(data.textContent, data.width);
+    const allLines = wrapText(data.textContent, wrapWidth);
 
     if (allLines.length > 1) {
       const lineHeight = parseFloat(data.styles.fontSize) * 1.2;
@@ -475,7 +557,34 @@ export const convertSvgToInkscape = (svgContent) => {
       textElement.textContent = data.textContent;
     }
 
-    fo.parentNode?.replaceChild(textElement, fo);
+    // For edge labels, add a background rect behind the text
+    if (data.labelType === 'edge') {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+      // Measure actual text width for the background rect
+      const fontWeight = data.styles.fontWeight || 'normal';
+      const fontSize = data.styles.fontSize || '14px';
+      const fontFamily = data.styles.fontFamily || 'Arial, sans-serif';
+      measureCtx.font = `${fontWeight} ${fontSize} ${fontFamily}`;
+      const textWidth = Math.max(...allLines.map(l => measureCtx.measureText(l).width));
+      const lineHeight = parseFloat(fontSize) * 1.2;
+      const totalTextHeight = lineHeight * allLines.length;
+      const padding = 4;
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', (centerX - textWidth / 2 - padding).toString());
+      rect.setAttribute('y', (centerY - totalTextHeight / 2 - padding).toString());
+      rect.setAttribute('width', (textWidth + padding * 2).toString());
+      rect.setAttribute('height', (totalTextHeight + padding * 2).toString());
+      rect.setAttribute('fill', data.bgColor || '#ffffff');
+      rect.setAttribute('stroke', 'none');
+
+      g.appendChild(rect);
+      g.appendChild(textElement);
+      fo.parentNode?.replaceChild(g, fo);
+    } else {
+      fo.parentNode?.replaceChild(textElement, fo);
+    }
   });
 
   // CANVAS EXPANSION: Calculate bounding box AFTER foreignObject conversion
@@ -628,6 +737,18 @@ export const convertSvgToInkscape = (svgContent) => {
           hasContent = true;
         }
       }
+    });
+
+    // Get lines (sequence diagram message lines)
+    Array.from(svgElement.querySelectorAll('line')).forEach(line => {
+      if (line.closest('marker')) return;
+      const x1 = parseFloat(line.getAttribute('x1')) || 0;
+      const y1 = parseFloat(line.getAttribute('y1')) || 0;
+      const x2 = parseFloat(line.getAttribute('x2')) || 0;
+      const y2 = parseFloat(line.getAttribute('y2')) || 0;
+      const lMinX = Math.min(x1, x2);
+      const lMinY = Math.min(y1, y2);
+      updateBounds(lMinX, lMinY, Math.abs(x2 - x1), Math.abs(y2 - y1), line);
     });
 
     // Get polylines
