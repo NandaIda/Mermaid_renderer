@@ -309,12 +309,22 @@ function App() {
     const elementStyles = new Map()
     originalElements.forEach((el, index) => {
       const computed = window.getComputedStyle(el)
-      elementStyles.set(index, {
+      const styles = {
         fill: computed.fill,
         stroke: computed.stroke,
         strokeWidth: computed.strokeWidth,
         strokeDasharray: computed.strokeDasharray
-      })
+      }
+      // For native SVG text elements (e.g. sequence diagrams), capture font and alignment
+      const tagName = el.tagName?.toLowerCase()
+      if (tagName === 'text' || tagName === 'tspan') {
+        styles.fontSize = computed.fontSize
+        styles.fontFamily = computed.fontFamily
+        styles.fontWeight = computed.fontWeight
+        styles.textAnchor = computed.textAnchor
+        styles.dominantBaseline = computed.dominantBaseline
+      }
+      elementStyles.set(index, styles)
     })
 
     // Extract marker colors from paths in ORIGINAL SVG
@@ -355,17 +365,13 @@ function App() {
     svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
     svgClone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
 
-    // Remove marker-specific CSS rules that can override explicit SVG attributes in Inkscape
+    // Remove ALL CSS rules - computed styles are already inlined as SVG attributes.
+    // CSS rules override presentation attributes (even tag-based selectors like
+    // #mermaid-id text { fill: ... } beat fill="..." on the element), so they must
+    // be removed to prevent wrong colors/alignment in Inkscape and other renderers.
     const styleTags = svgClone.querySelectorAll('style')
     styleTags.forEach(styleTag => {
-      let css = styleTag.textContent || ''
-
-      // Remove CSS rules for markers and arrowheads
-      css = css.replace(/[^}]*\.marker[^{]*\{[^}]*\}/gi, '')
-      css = css.replace(/[^}]*\.arrowhead[^{]*\{[^}]*\}/gi, '')
-      css = css.replace(/[^}]*\.arrowMarker[^{]*\{[^}]*\}/gi, '')
-
-      styleTag.textContent = css
+      styleTag.textContent = ''
     })
 
     // Process all style attributes to convert inline styles to attributes
@@ -435,6 +441,25 @@ function App() {
       }
       if (styles && styles.strokeDasharray && styles.strokeDasharray !== 'none') {
         el.setAttribute('stroke-dasharray', styles.strokeDasharray)
+      }
+
+      // For native SVG text/tspan elements (sequence diagrams etc.), inline font & alignment
+      // so they survive CSS removal. Also force stroke="none" — text uses fill for color,
+      // not stroke. Without this, text inherits the parent's stroke (e.g. actor box outline).
+      const tagName = el.tagName?.toLowerCase()
+      if ((tagName === 'text' || tagName === 'tspan') && styles) {
+        if (styles.fontSize) el.setAttribute('font-size', styles.fontSize)
+        if (styles.fontFamily) el.setAttribute('font-family', styles.fontFamily)
+        if (styles.fontWeight && styles.fontWeight !== 'normal' && styles.fontWeight !== '400') {
+          el.setAttribute('font-weight', styles.fontWeight)
+        }
+        if (styles.textAnchor && styles.textAnchor !== 'start') {
+          el.setAttribute('text-anchor', styles.textAnchor)
+        }
+        if (styles.dominantBaseline && styles.dominantBaseline !== 'auto') {
+          el.setAttribute('dominant-baseline', styles.dominantBaseline)
+        }
+        el.setAttribute('stroke', 'none')
       }
 
       // CRITICAL: Edge paths must have fill="none" to render as strokes in Inkscape
