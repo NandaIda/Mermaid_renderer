@@ -387,7 +387,9 @@ function App() {
         const styleProps = style.split(';').map(s => s.trim()).filter(Boolean)
 
         styleProps.forEach(prop => {
-          const [key, value] = prop.split(':').map(s => s.trim())
+          const [key, rawValue] = prop.split(':').map(s => s.trim())
+          // Strip !important - it's CSS syntax, not valid in SVG attributes
+          const value = rawValue ? rawValue.replace(/\s*!important\s*$/, '') : rawValue
           if (key && value) {
             // Convert common CSS properties to SVG attributes
             if (key === 'fill') {
@@ -628,6 +630,9 @@ function App() {
     // Serialize with proper formatting
     const serializer = new XMLSerializer()
     let svgData = serializer.serializeToString(svgClone)
+
+    // Final cleanup: strip any remaining !important (CSS-only, invalid in SVG attributes)
+    svgData = svgData.replace(/\s*!important\s*/g, ' ')
 
     // Add XML declaration
     svgData = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + svgData

@@ -91,6 +91,13 @@ Three parallel implementations exist for SVG-to-Inkscape conversion:
 3.  Marker/arrowhead color extraction and reapplication
 4.  ViewBox/bounding box recalculation (inkscapeConverter + CLI only)
 
+#### `!important` Stripping
+Mermaid's CSS sometimes includes `!important` on style values (e.g., `fill: #f99 !important`). When inlining CSS as SVG attributes, `!important` must be stripped — it is CSS-only syntax and invalid in SVG attribute values. Renderers like Inkscape are lenient and ignore it, but strict renderers like **WeasyPrint** fail to parse the color and default to black, breaking colored nodes in PDF output.
+
+All three export files must:
+1.  Strip `!important` from each value when converting inline `style` properties to SVG attributes (`.replace(/\s*!important\s*$/, '')`).
+2.  Apply a final blanket cleanup on the serialized SVG string (`.replace(/\s*!important\s*/g, ' ')`) as a safety net for any values missed by per-property stripping.
+
 #### Text Wrapping Rules
 *   **`<br>` tags** are preserved as explicit line breaks using DOM tree walking (`walkNodes`) with a vertical tab marker (`\u000B`). The wrapping function splits on this marker first, then wraps each segment by width. Do NOT use innerHTML-based `<br>` replacement — HTML collapses `\n` whitespace.
 *   **Width padding** prevents premature wrapping due to Canvas vs browser measurement differences:
